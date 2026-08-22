@@ -13,18 +13,6 @@
       "year": "2025"
     },
     {
-      "entity_id": "dept_human_resources_&_operations",
-      "name": "Human Resources & Operations",
-      "entity_type": "Department",
-      "document_id": "4536ea58-6cde-4d73-afce-21fbb37350a2",
-      "document_name": "Employee_Operations_Policy_2025.pdf",
-      "chunk_id": "4536ea58-6cde-4d73-afce-21fbb37350a2_p2_c6",
-      "page_number": 2,
-      "section_title": "Section 6. IT Equipment & Home Office",
-      "version": "1",
-      "year": "2025"
-    },
-    {
       "entity_id": "req_c92673e9-ea0f-4be5-a654-0df4e68e8005_attendance_rule",
       "name": "Attendance Rule (75% on-site)",
       "entity_type": "Requirement",
@@ -592,6 +580,18 @@
       "entity_id": "doc_4536ea58-6cde-4d73-afce-21fbb37350a2",
       "name": "Employee Operations Policy 2025",
       "entity_type": "Policy",
+      "document_id": "4536ea58-6cde-4d73-afce-21fbb37350a2",
+      "document_name": "Employee_Operations_Policy_2025.pdf",
+      "chunk_id": "4536ea58-6cde-4d73-afce-21fbb37350a2_p2_c6",
+      "page_number": 2,
+      "section_title": "Section 6. IT Equipment & Home Office",
+      "version": "1",
+      "year": "2025"
+    },
+    {
+      "entity_id": "dept_human_resources_&_operations",
+      "name": "Human Resources & Operations",
+      "entity_type": "Department",
       "document_id": "4536ea58-6cde-4d73-afce-21fbb37350a2",
       "document_name": "Employee_Operations_Policy_2025.pdf",
       "chunk_id": "4536ea58-6cde-4d73-afce-21fbb37350a2_p2_c6",
