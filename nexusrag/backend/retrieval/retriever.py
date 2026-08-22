@@ -1,3 +1,5 @@
+import numpy as np
+```python
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
@@ -12,15 +14,21 @@ class RetrievalResult:
     text: str
     similarity_score: float
     document_name: str
+
     page_number: Optional[int] = 1
     section_title: Optional[str] = None
     sheet_name: Optional[str] = None
+
     version: Optional[str] = "1.0"
     year: Optional[str] = "2026"
     department: Optional[str] = "General"
+
     char_count: int = 0
     token_count: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    metadata: Dict[str, Any] = field(
+        default_factory=dict
+    )
 
 
 class VectorRetriever:
@@ -35,102 +43,112 @@ class VectorRetriever:
         self.embedding_provider = embedding_provider
         self.top_k = top_k
 
+    # ============================================================
+    # ENSURE VECTOR DIMENSIONS
+    # ============================================================
+
     def _ensure_vector_dimensions(self):
-        """
-        Make sure stored vectors and the current embedding provider
-        use exactly the same dimension.
 
-        If old vectors were created with an older TF-IDF vocabulary,
-        rebuild them automatically from the stored chunk texts.
-        """
+        vectors = self.vector_store.vectors
+        chunks = self.vector_store.chunks_data
 
-        if (
-            self.vector_store.vectors is None
-            or not self.vector_store.chunks_data
-        ):
+        if vectors is None or not chunks:
             return
 
+        # Local TF-IDF provider has a fit() method.
         if not hasattr(
             self.embedding_provider,
             "fit"
         ):
             return
 
-        texts = [
-            d.get("text", "")
-            for d in self.vector_store.chunks_data
+        all_texts = [
+            str(chunk.get("text", ""))
+            for chunk in chunks
         ]
 
-        texts = [
-            str(text)
-            for text in texts
-            if str(text).strip()
-        ]
-
-        if not texts:
+        if not all_texts:
             return
 
-        # Always fit the local provider against the SAME stored
-        # document corpus used by the vector store.
-        self.embedding_provider.fit(texts)
+        # Always fit the TF-IDF vocabulary using
+        # exactly the same corpus as the stored chunks.
+        self.embedding_provider.fit(
+            all_texts
+        )
 
         expected_dimension = getattr(
             self.embedding_provider,
             "dimension",
-            None
+            0
         )
+
+        stored_vectors = np.asarray(
+            vectors
+        )
+
+        if stored_vectors.ndim == 1:
+            stored_vectors = stored_vectors.reshape(
+                1,
+                -1
+            )
 
         stored_dimension = (
-            self.vector_store.vectors.shape[1]
-            if self.vector_store.vectors.ndim == 2
-            else None
+            stored_vectors.shape[1]
         )
 
-        if (
-            expected_dimension is not None
-            and stored_dimension != expected_dimension
-        ):
+        # --------------------------------------------------------
+        # REBUILD IF DIMENSIONS DIFFER
+        # --------------------------------------------------------
+
+        if stored_dimension != expected_dimension:
 
             print(
-                "[NexusRAG] Rebuilding vector store: "
-                f"stored={stored_dimension}, "
-                f"expected={expected_dimension}"
+                "[NexusRAG] Vector dimension mismatch detected."
+            )
+
+            print(
+                f"[NexusRAG] Stored dimension: "
+                f"{stored_dimension}"
+            )
+
+            print(
+                f"[NexusRAG] Expected dimension: "
+                f"{expected_dimension}"
             )
 
             new_vectors = (
                 self.embedding_provider.embed_texts(
-                    texts
+                    all_texts
                 )
             )
 
-            # The filtered text list should normally match all chunks.
-            # If empty/filtered texts caused a mismatch, rebuild using
-            # every chunk instead.
-            if len(new_vectors) != len(
-                self.vector_store.chunks_data
-            ):
+            if len(new_vectors) != len(chunks):
 
-                all_texts = [
-                    str(d.get("text", ""))
-                    for d in self.vector_store.chunks_data
-                ]
-
-                self.embedding_provider.fit(
-                    all_texts
+                raise ValueError(
+                    "Vector rebuild failed because the "
+                    "number of embeddings does not match "
+                    "the number of stored chunks."
                 )
 
-                new_vectors = (
-                    self.embedding_provider.embed_texts(
-                        all_texts
-                    )
-                )
+            self.vector_store.vectors = (
+                new_vectors
+            )
 
-            self.vector_store.vectors = new_vectors
             self.vector_store.save()
 
             print(
                 "[NexusRAG] Vector store rebuilt successfully."
             )
+
+        else:
+
+            self.vector_store.vectors = (
+                stored_vectors
+            )
+
+    # ============================================================
+    # RETRIEVE
+    # ============================================================
 
     def retrieve(
         self,
@@ -138,17 +156,26 @@ class VectorRetriever:
         top_k: Optional[int] = None
     ) -> List[RetrievalResult]:
 
-        k = top_k or self.top_k
-
-        if not query.strip():
+        if not query or not query.strip():
             return []
 
-        # Repair old/incompatible local TF-IDF vectors
-        # before creating the query embedding.
+        k = (
+            top_k
+            if top_k is not None
+            else self.top_k
+        )
+
+        # Make sure stored vectors and the current
+        # embedding provider use the same dimension.
         self._ensure_vector_dimensions()
 
+        # If the provider is not fitted yet,
+        # fit it using the complete stored corpus.
         if (
-            hasattr(self.embedding_provider, "fit")
+            hasattr(
+                self.embedding_provider,
+                "fit"
+            )
             and not getattr(
                 self.embedding_provider,
                 "is_fitted",
@@ -157,8 +184,9 @@ class VectorRetriever:
         ):
 
             all_texts = [
-                d.get("text", "")
-                for d in self.vector_store.chunks_data
+                str(chunk.get("text", ""))
+                for chunk
+                in self.vector_store.chunks_data
             ]
 
             if all_texts:
@@ -166,11 +194,69 @@ class VectorRetriever:
                     all_texts
                 )
 
+        # --------------------------------------------------------
+        # CREATE QUERY EMBEDDING
+        # --------------------------------------------------------
+
         query_embedding = (
             self.embedding_provider.embed_query(
                 query
             )
         )
+
+        # --------------------------------------------------------
+        # FINAL DIMENSION SAFETY CHECK
+        # --------------------------------------------------------
+
+        if (
+            self.vector_store.vectors is not None
+            and query_embedding is not None
+        ):
+
+            stored_vectors = (
+                self.vector_store.vectors
+            )
+
+            if stored_vectors.ndim == 1:
+
+                stored_dimension = len(
+                    stored_vectors
+                )
+
+            else:
+
+                stored_dimension = (
+                    stored_vectors.shape[1]
+                )
+
+            if query_embedding.ndim == 1:
+
+                query_dimension = (
+                    query_embedding.shape[0]
+                )
+
+            else:
+
+                query_dimension = (
+                    query_embedding.shape[1]
+                )
+
+            if (
+                stored_dimension
+                != query_dimension
+            ):
+
+                raise ValueError(
+                    "Embedding dimension mismatch "
+                    "after automatic rebuild. "
+                    f"Stored={stored_dimension}, "
+                    f"Query={query_dimension}. "
+                    "Please clear and re-index the documents."
+                )
+
+        # --------------------------------------------------------
+        # SIMILARITY SEARCH
+        # --------------------------------------------------------
 
         raw_results = (
             self.vector_store.similarity_search(
@@ -181,80 +267,91 @@ class VectorRetriever:
 
         results: List[RetrievalResult] = []
 
+        # --------------------------------------------------------
+        # CONVERT RAW RESULTS
+        # --------------------------------------------------------
+
         for chunk_data, score in raw_results:
 
-            meta = chunk_data.get(
+            metadata = chunk_data.get(
                 "metadata",
                 {}
             )
 
+            text = chunk_data.get(
+                "text",
+                ""
+            )
+
             results.append(
                 RetrievalResult(
+
                     chunk_id=chunk_data.get(
                         "chunk_id",
                         ""
                     ),
+
                     document_id=chunk_data.get(
                         "document_id",
                         ""
                     ),
-                    text=chunk_data.get(
-                        "text",
-                        ""
-                    ),
+
+                    text=text,
+
                     similarity_score=round(
                         float(score),
                         4
                     ),
-                    document_name=meta.get(
+
+                    document_name=metadata.get(
                         "document_name",
                         "Document"
                     ),
-                    page_number=meta.get(
+
+                    page_number=metadata.get(
                         "page_number",
                         1
                     ),
-                    section_title=meta.get(
+
+                    section_title=metadata.get(
                         "section_title"
                     ),
-                    sheet_name=meta.get(
+
+                    sheet_name=metadata.get(
                         "sheet_name"
                     ),
-                    version=meta.get(
+
+                    version=metadata.get(
                         "version",
                         "1.0"
                     ),
-                    year=meta.get(
+
+                    year=metadata.get(
                         "year",
                         "2026"
                     ),
-                    department=meta.get(
+
+                    department=metadata.get(
                         "department",
                         "General"
                     ),
+
                     char_count=chunk_data.get(
                         "char_count",
-                        len(
-                            chunk_data.get(
-                                "text",
-                                ""
-                            )
-                        )
+                        len(text)
                     ),
+
                     token_count=chunk_data.get(
                         "token_count",
                         max(
                             1,
-                            len(
-                                chunk_data.get(
-                                    "text",
-                                    ""
-                                ).split()
-                            )
+                            len(text.split())
                         )
                     ),
-                    metadata=meta
+
+                    metadata=metadata
                 )
             )
 
         return results
+```
