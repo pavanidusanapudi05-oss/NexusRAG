@@ -28,12 +28,16 @@ class LocalVectorStore:
 
         self.load()
 
+    # ---------------------------------------------------------
+    # ADD CHUNKS
+    # ---------------------------------------------------------
+
     def add_chunks(
         self,
         document_id: str,
         chunks: List[DocumentChunk],
         embeddings: np.ndarray
-    ):
+    ) -> None:
 
         if (
             not chunks
@@ -42,13 +46,33 @@ class LocalVectorStore:
         ):
             return
 
+        embeddings = np.asarray(
+            embeddings,
+            dtype=np.float32
+        )
+
+        # Make sure embeddings are 2-D
+        if embeddings.ndim == 1:
+            embeddings = embeddings.reshape(
+                1, -1
+            )
+
+        if len(embeddings) != len(chunks):
+            raise ValueError(
+                "Number of embeddings does not match "
+                "number of chunks: "
+                f"{len(embeddings)} != {len(chunks)}"
+            )
+
+        # Remove old vectors belonging to this document.
         self.delete_document_vectors(
             document_id,
             auto_save=False
         )
 
         new_chunk_ids = [
-            c.chunk_id for c in chunks
+            c.chunk_id
+            for c in chunks
         ]
 
         new_doc_ids = [
@@ -56,15 +80,18 @@ class LocalVectorStore:
         ] * len(chunks)
 
         new_chunks_data = [
-            c.to_dict() for c in chunks
+            c.to_dict()
+            for c in chunks
         ]
 
-        embeddings = np.asarray(
-            embeddings,
-            dtype=np.float32
-        )
+        # -----------------------------------------------------
+        # EMPTY VECTOR STORE
+        # -----------------------------------------------------
 
-        if self.vectors is None or len(self.chunk_ids) == 0:
+        if (
+            self.vectors is None
+            or len(self.chunk_ids) == 0
+        ):
 
             self.chunk_ids = list(
                 new_chunk_ids
@@ -78,52 +105,78 @@ class LocalVectorStore:
                 new_chunks_data
             )
 
-            self.vectors = embeddings
+            self.vectors = embeddings.copy()
+
+        # -----------------------------------------------------
+        # EXISTING VECTOR STORE
+        # -----------------------------------------------------
 
         else:
 
-            # Make sure dimensions match before stacking.
-            if (
-                self.vectors.ndim != 2
-                or embeddings.ndim != 2
-            ):
-                raise ValueError(
-                    "Stored vectors and new embeddings "
-                    "must both be 2-dimensional."
+            existing = np.asarray(
+                self.vectors,
+                dtype=np.float32
+            )
+
+            if existing.ndim == 1:
+                existing = existing.reshape(
+                    1, -1
                 )
 
-            if (
-                self.vectors.shape[1]
-                != embeddings.shape[1]
-            ):
-                raise ValueError(
-                    "Embedding dimension mismatch while "
-                    "indexing documents: "
-                    f"stored={self.vectors.shape[1]}, "
-                    f"new={embeddings.shape[1]}. "
-                    "Clear the vector store and re-index."
+            # If dimensions differ, do NOT perform vstack.
+            # Existing vectors were created using a different
+            # embedding vocabulary/model.
+            if existing.shape[1] != embeddings.shape[1]:
+
+                print(
+                    "[NexusRAG] Vector dimension changed: "
+                    f"{existing.shape[1]} -> "
+                    f"{embeddings.shape[1]}"
                 )
 
-            self.chunk_ids.extend(
-                new_chunk_ids
-            )
+                # Rebuild the store using ONLY the new
+                # document being indexed. Other documents
+                # will be re-indexed when requested.
+                self.chunk_ids = list(
+                    new_chunk_ids
+                )
 
-            self.document_ids.extend(
-                new_doc_ids
-            )
+                self.document_ids = list(
+                    new_doc_ids
+                )
 
-            self.chunks_data.extend(
-                new_chunks_data
-            )
+                self.chunks_data = list(
+                    new_chunks_data
+                )
 
-            self.vectors = np.vstack(
-                [
-                    self.vectors,
-                    embeddings
-                ]
-            )
+                self.vectors = embeddings.copy()
+
+            else:
+
+                self.chunk_ids.extend(
+                    new_chunk_ids
+                )
+
+                self.document_ids.extend(
+                    new_doc_ids
+                )
+
+                self.chunks_data.extend(
+                    new_chunks_data
+                )
+
+                self.vectors = np.vstack(
+                    [
+                        existing,
+                        embeddings
+                    ]
+                )
 
         self.save()
+
+    # ---------------------------------------------------------
+    # DELETE DOCUMENT VECTORS
+    # ---------------------------------------------------------
 
     def delete_document_vectors(
         self,
@@ -137,59 +190,90 @@ class LocalVectorStore:
         ):
             return 0
 
+        # Make sure metadata and vectors have
+        # consistent lengths.
+        total_vectors = len(
+            self.vectors
+        )
+
+        total_documents = len(
+            self.document_ids
+        )
+
+        usable_count = min(
+            total_vectors,
+            total_documents
+        )
+
+        if usable_count == 0:
+            return 0
+
         indices_to_keep = [
             i
-            for i, doc_id in enumerate(
-                self.document_ids
-            )
-            if doc_id != document_id
+            for i in range(usable_count)
+            if self.document_ids[i]
+            != document_id
         ]
 
         deleted_count = (
-            len(self.document_ids)
+            usable_count
             - len(indices_to_keep)
         )
 
-        if deleted_count == 0:
-            return 0
-
-        self.chunk_ids = [
-            self.chunk_ids[i]
-            for i in indices_to_keep
-        ]
-
-        self.document_ids = [
-            self.document_ids[i]
-            for i in indices_to_keep
-        ]
-
-        self.chunks_data = [
-            self.chunks_data[i]
-            for i in indices_to_keep
-        ]
+        # -----------------------------------------------------
+        # KEEP NOTHING
+        # -----------------------------------------------------
 
         if len(indices_to_keep) == 0:
 
+            self.chunk_ids = []
+            self.document_ids = []
+            self.chunks_data = []
             self.vectors = None
+
+        # -----------------------------------------------------
+        # KEEP SOME VECTORS
+        # -----------------------------------------------------
 
         else:
 
-            self.vectors = (
-                self.vectors[
-                    indices_to_keep
-                ]
-            )
+            self.chunk_ids = [
+                self.chunk_ids[i]
+                for i in indices_to_keep
+                if i < len(self.chunk_ids)
+            ]
+
+            self.document_ids = [
+                self.document_ids[i]
+                for i in indices_to_keep
+            ]
+
+            self.chunks_data = [
+                self.chunks_data[i]
+                for i in indices_to_keep
+                if i < len(self.chunks_data)
+            ]
+
+            self.vectors = self.vectors[
+                indices_to_keep
+            ]
 
         if auto_save:
             self.save()
 
         return deleted_count
 
+    # ---------------------------------------------------------
+    # SIMILARITY SEARCH
+    # ---------------------------------------------------------
+
     def similarity_search(
         self,
         query_embedding: np.ndarray,
         top_k: int = 5
-    ) -> List[Tuple[Dict[str, Any], float]]:
+    ) -> List[
+        Tuple[Dict[str, Any], float]
+    ]:
 
         if (
             self.vectors is None
@@ -200,39 +284,55 @@ class LocalVectorStore:
         query_vec = np.asarray(
             query_embedding,
             dtype=np.float32
-        ).reshape(1, -1)
+        )
 
-        if self.vectors.ndim != 2:
-
-            raise ValueError(
-                f"Invalid vector store shape: "
-                f"{self.vectors.shape}"
+        if query_vec.ndim == 1:
+            query_vec = query_vec.reshape(
+                1, -1
             )
 
-        stored_dimension = (
-            self.vectors.shape[1]
+        stored_vectors = np.asarray(
+            self.vectors,
+            dtype=np.float32
         )
 
-        query_dimension = (
-            query_vec.shape[1]
-        )
+        if stored_vectors.ndim == 1:
+            stored_vectors = stored_vectors.reshape(
+                1, -1
+            )
 
-        # Prevent the original:
-        # shapes (30,277) and (944,1)
-        # not aligned error.
-        if stored_dimension != query_dimension:
+        # -----------------------------------------------------
+        # CRITICAL DIMENSION CHECK
+        # -----------------------------------------------------
+
+        if (
+            stored_vectors.shape[1]
+            != query_vec.shape[1]
+        ):
 
             raise ValueError(
-                "Embedding dimension mismatch: "
-                f"stored vectors={stored_dimension}, "
-                f"query={query_dimension}. "
+                "Embedding dimension mismatch. "
+                f"Stored vectors have dimension "
+                f"{stored_vectors.shape[1]}, "
+                f"but query has dimension "
+                f"{query_vec.shape[1]}. "
                 "Please re-index the documents."
             )
 
+        # Cosine similarity because embeddings
+        # are L2 normalized.
         scores = np.dot(
-            self.vectors,
+            stored_vectors,
             query_vec.T
         ).flatten()
+
+        top_k = max(
+            1,
+            min(
+                int(top_k),
+                len(scores)
+            )
+        )
 
         top_indices = np.argsort(
             scores
@@ -241,6 +341,11 @@ class LocalVectorStore:
         results = []
 
         for idx in top_indices:
+
+            if idx >= len(
+                self.chunks_data
+            ):
+                continue
 
             score = float(
                 scores[idx]
@@ -255,12 +360,17 @@ class LocalVectorStore:
 
         return results
 
+    # ---------------------------------------------------------
+    # STATS
+    # ---------------------------------------------------------
+
     def get_total_vectors(self) -> int:
 
-        return (
-            len(self.chunk_ids)
-            if self.chunk_ids
-            else 0
+        if not self.chunk_ids:
+            return 0
+
+        return len(
+            self.chunk_ids
         )
 
     def get_indexed_document_ids(
@@ -268,10 +378,16 @@ class LocalVectorStore:
     ) -> List[str]:
 
         return list(
-            set(self.document_ids)
+            set(
+                self.document_ids
+            )
         )
 
-    def save(self):
+    # ---------------------------------------------------------
+    # SAVE
+    # ---------------------------------------------------------
+
+    def save(self) -> None:
 
         vec_file = (
             self.persist_dir
@@ -294,9 +410,14 @@ class LocalVectorStore:
             )
 
             data = {
-                "chunk_ids": self.chunk_ids,
-                "document_ids": self.document_ids,
-                "chunks_data": self.chunks_data
+                "chunk_ids":
+                    self.chunk_ids,
+
+                "document_ids":
+                    self.document_ids,
+
+                "chunks_data":
+                    self.chunks_data
             }
 
             with open(
@@ -318,6 +439,10 @@ class LocalVectorStore:
 
             if meta_file.exists():
                 meta_file.unlink()
+
+    # ---------------------------------------------------------
+    # LOAD
+    # ---------------------------------------------------------
 
     def load(self) -> bool:
 
@@ -372,6 +497,38 @@ class LocalVectorStore:
                 []
             )
 
+            # Validate loaded store.
+            if (
+                self.vectors is not None
+                and self.vectors.ndim == 1
+            ):
+
+                self.vectors = (
+                    self.vectors.reshape(
+                        1, -1
+                    )
+                )
+
+            # If metadata and vector count are
+            # inconsistent, reset the store.
+            if (
+                self.vectors is not None
+                and len(self.vectors)
+                != len(self.chunk_ids)
+            ):
+
+                print(
+                    "[NexusRAG] Invalid vector store "
+                    "detected. Resetting."
+                )
+
+                self.chunk_ids = []
+                self.document_ids = []
+                self.chunks_data = []
+                self.vectors = None
+
+                return False
+
             return True
 
         except Exception as e:
@@ -387,7 +544,11 @@ class LocalVectorStore:
 
             return False
 
-    def clear(self):
+    # ---------------------------------------------------------
+    # CLEAR
+    # ---------------------------------------------------------
+
+    def clear(self) -> None:
 
         self.chunk_ids = []
         self.document_ids = []
@@ -398,5 +559,6 @@ class LocalVectorStore:
 
             try:
                 f.unlink()
+
             except Exception:
                 pass
