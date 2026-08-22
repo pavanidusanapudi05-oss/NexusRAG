@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-import numpy as np
 
 from .embedding_service import BaseEmbeddingProvider
 from .vector_store import LocalVectorStore
@@ -24,39 +23,75 @@ metadata: Dict[str, Any] = field(default_factory=dict)
 
 class VectorRetriever:
 
+```
 def __init__(
     self,
     vector_store: LocalVectorStore,
     embedding_provider: BaseEmbeddingProvider,
     top_k: int = 5
 ):
+
     self.vector_store = vector_store
     self.embedding_provider = embedding_provider
     self.top_k = top_k
 
-def _ensure_vector_dimensions(self):
+def _prepare_local_embeddings(self) -> None:
+    """
+    Ensure the local TF-IDF provider is fitted using exactly
+    the same corpus that exists in the vector store.
+    """
 
-    vectors = self.vector_store.vectors
-    chunks = self.vector_store.chunks_data
-
-    if vectors is None or not chunks:
+    if not hasattr(
+        self.embedding_provider,
+        "fit"
+    ):
         return
 
-    # Local TF-IDF provider
-    if not hasattr(self.embedding_provider, "fit"):
+    if not self.vector_store.chunks_data:
         return
 
-    all_texts = [
-        str(chunk.get("text", ""))
-        for chunk in chunks
-        if str(chunk.get("text", "")).strip()
+    texts = [
+        str(
+            item.get(
+                "text",
+                ""
+            )
+        )
+        for item in self.vector_store.chunks_data
     ]
 
-    if not all_texts:
+    texts = [
+        text
+        for text in texts
+        if text.strip()
+    ]
+
+    if not texts:
         return
 
-    # Fit TF-IDF on the same corpus used by the vector store.
-    self.embedding_provider.fit(all_texts)
+    self.embedding_provider.fit(
+        texts
+    )
+
+def _rebuild_vector_store_if_needed(self) -> None:
+    """
+    Rebuild local TF-IDF vectors when the stored vector dimension
+    does not match the current fitted vocabulary dimension.
+    """
+
+    if not hasattr(
+        self.embedding_provider,
+        "fit"
+    ):
+        return
+
+    if (
+        self.vector_store.vectors is None
+        or not self.vector_store.chunks_data
+    ):
+        return
+
+    self._prepare_local_embeddings()
 
     expected_dimension = getattr(
         self.embedding_provider,
@@ -64,60 +99,62 @@ def _ensure_vector_dimensions(self):
         0
     )
 
-    stored_vectors = np.asarray(
-        vectors,
-        dtype=np.float32
-    )
+    if expected_dimension <= 0:
+        return
+
+    stored_vectors = self.vector_store.vectors
 
     if stored_vectors.ndim == 1:
-        stored_vectors = stored_vectors.reshape(1, -1)
-
-    stored_dimension = stored_vectors.shape[1]
-
-    if stored_dimension != expected_dimension:
-
-        print(
-            "[NexusRAG] Vector dimension mismatch detected."
+        stored_dimension = len(
+            stored_vectors
         )
-        print(
-            f"[NexusRAG] Stored dimension: {stored_dimension}"
-        )
-        print(
-            f"[NexusRAG] Expected dimension: {expected_dimension}"
-        )
-
-        # Rebuild using every stored chunk.
-        all_chunk_texts = [
-            str(chunk.get("text", ""))
-            for chunk in chunks
-        ]
-
-        self.embedding_provider.fit(
-            all_chunk_texts
-        )
-
-        new_vectors = (
-            self.embedding_provider.embed_texts(
-                all_chunk_texts
-            )
-        )
-
-        if len(new_vectors) != len(chunks):
-            raise ValueError(
-                "Vector rebuild failed: number of "
-                "embeddings does not match number "
-                "of stored chunks."
-            )
-
-        self.vector_store.vectors = new_vectors
-        self.vector_store.save()
-
-        print(
-            "[NexusRAG] Vector store rebuilt successfully."
-        )
-
     else:
-        self.vector_store.vectors = stored_vectors
+        stored_dimension = (
+            stored_vectors.shape[1]
+        )
+
+    if stored_dimension == expected_dimension:
+        return
+
+    print(
+        "[NexusRAG] Rebuilding incompatible "
+        "local vector store: "
+        f"{stored_dimension} -> "
+        f"{expected_dimension}"
+    )
+
+    all_texts = [
+        str(
+            item.get(
+                "text",
+                ""
+            )
+        )
+        for item in self.vector_store.chunks_data
+    ]
+
+    new_vectors = (
+        self.embedding_provider.embed_texts(
+            all_texts
+        )
+    )
+
+    if len(new_vectors) != len(
+        self.vector_store.chunks_data
+    ):
+        raise ValueError(
+            "Failed to rebuild vector store. "
+            "Number of generated vectors does not "
+            "match stored chunks."
+        )
+
+    self.vector_store.vectors = new_vectors
+
+    self.vector_store.save()
+
+    print(
+        "[NexusRAG] Vector store rebuilt successfully."
+    )
 
 def retrieve(
     self,
@@ -125,8 +162,82 @@ def retrieve(
     top_k: Optional[int] = None
 ) -> List[RetrievalResult]:
 
-    if not query or not query.strip():
+    clean_query = (
+        query.strip()
+        if query
+        else ""
+    )
+
+    if not clean_query:
         return []
+
+    # -----------------------------------------------------
+    # LOCAL TF-IDF PROVIDER
+    # -----------------------------------------------------
+
+    if hasattr(
+        self.embedding_provider,
+        "fit"
+    ):
+
+        self._prepare_local_embeddings()
+
+        self._rebuild_vector_store_if_needed()
+
+    # -----------------------------------------------------
+    # MAKE QUERY EMBEDDING
+    # -----------------------------------------------------
+
+    query_embedding = (
+        self.embedding_provider.embed_query(
+            clean_query
+        )
+    )
+
+    # -----------------------------------------------------
+    # FINAL SAFETY CHECK
+    # -----------------------------------------------------
+
+    if (
+        self.vector_store.vectors is not None
+        and len(self.vector_store.vectors) > 0
+    ):
+
+        stored_vectors = (
+            self.vector_store.vectors
+        )
+
+        if stored_vectors.ndim == 1:
+            stored_dimension = len(
+                stored_vectors
+            )
+        else:
+            stored_dimension = (
+                stored_vectors.shape[1]
+            )
+
+        query_dimension = (
+            query_embedding.shape[1]
+            if query_embedding.ndim == 2
+            else query_embedding.shape[0]
+        )
+
+        if (
+            stored_dimension
+            != query_dimension
+        ):
+
+            raise ValueError(
+                "Embedding dimension mismatch "
+                "after automatic rebuild: "
+                f"stored={stored_dimension}, "
+                f"query={query_dimension}. "
+                "Please re-index the documents."
+            )
+
+    # -----------------------------------------------------
+    # SIMILARITY SEARCH
+    # -----------------------------------------------------
 
     k = (
         top_k
@@ -134,69 +245,6 @@ def retrieve(
         else self.top_k
     )
 
-    # Ensure document and query embeddings
-    # use the same TF-IDF vocabulary.
-    self._ensure_vector_dimensions()
-
-    # Fit local provider if necessary.
-    if (
-        hasattr(self.embedding_provider, "fit")
-        and not getattr(
-            self.embedding_provider,
-            "is_fitted",
-            False
-        )
-    ):
-
-        all_texts = [
-            str(chunk.get("text", ""))
-            for chunk in self.vector_store.chunks_data
-        ]
-
-        if all_texts:
-            self.embedding_provider.fit(all_texts)
-
-    # Create query embedding.
-    query_embedding = (
-        self.embedding_provider.embed_query(
-            query
-        )
-    )
-
-    # Final safety check.
-    if self.vector_store.vectors is not None:
-
-        stored_vectors = np.asarray(
-            self.vector_store.vectors,
-            dtype=np.float32
-        )
-
-        if stored_vectors.ndim == 1:
-            stored_dimension = stored_vectors.shape[0]
-        else:
-            stored_dimension = stored_vectors.shape[1]
-
-        query_embedding = np.asarray(
-            query_embedding,
-            dtype=np.float32
-        )
-
-        if query_embedding.ndim == 1:
-            query_dimension = query_embedding.shape[0]
-        else:
-            query_dimension = query_embedding.shape[1]
-
-        if stored_dimension != query_dimension:
-
-            raise ValueError(
-                "Embedding dimension mismatch after "
-                "automatic rebuild. "
-                f"Stored={stored_dimension}, "
-                f"Query={query_dimension}. "
-                "Please clear and re-index the documents."
-            )
-
-    # Perform similarity search.
     raw_results = (
         self.vector_store.similarity_search(
             query_embedding,
@@ -267,7 +315,9 @@ def retrieve(
                     "token_count",
                     max(
                         1,
-                        len(text.split())
+                        len(
+                            text.split()
+                        )
                     )
                 ),
                 metadata=metadata
@@ -275,3 +325,4 @@ def retrieve(
         )
 
     return results
+```

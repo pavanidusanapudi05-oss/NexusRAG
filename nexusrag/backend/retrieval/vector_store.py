@@ -4,561 +4,506 @@ from typing import List, Dict, Any, Tuple, Optional
 
 import numpy as np
 
-from nexusrag.backend.models.chunk import DocumentChunk
-
-
 class LocalVectorStore:
 
-    def __init__(self, persist_dir: Optional[Path] = None):
+```
+def __init__(
+    self,
+    persist_dir: Optional[Path] = None
+):
 
-        self.persist_dir = (
-            persist_dir
-            or Path("nexusrag/data/vector_store")
+    self.persist_dir = (
+        persist_dir
+        or Path("nexusrag/data/vector_store")
+    )
+
+    self.persist_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    self.chunk_ids: List[str] = []
+    self.document_ids: List[str] = []
+    self.chunks_data: List[Dict[str, Any]] = []
+    self.vectors: Optional[np.ndarray] = None
+
+    self.load()
+
+def add_chunks(
+    self,
+    document_id: str,
+    chunks,
+    embeddings: np.ndarray
+) -> None:
+
+    if (
+        not chunks
+        or embeddings is None
+        or len(embeddings) == 0
+    ):
+        return
+
+    embeddings = np.asarray(
+        embeddings,
+        dtype=np.float32
+    )
+
+    if embeddings.ndim == 1:
+        embeddings = embeddings.reshape(
+            1,
+            -1
         )
 
-        self.persist_dir.mkdir(
-            parents=True,
-            exist_ok=True
+    if len(embeddings) != len(chunks):
+        raise ValueError(
+            "Number of embeddings does not match "
+            "number of chunks: "
+            f"{len(embeddings)} != {len(chunks)}"
         )
 
-        self.chunk_ids: List[str] = []
-        self.document_ids: List[str] = []
-        self.chunks_data: List[Dict[str, Any]] = []
-        self.vectors: Optional[np.ndarray] = None
+    self.delete_document_vectors(
+        document_id,
+        auto_save=False
+    )
 
-        self.load()
+    new_chunk_ids = [
+        chunk.chunk_id
+        for chunk in chunks
+    ]
 
-    # ---------------------------------------------------------
-    # ADD CHUNKS
-    # ---------------------------------------------------------
+    new_document_ids = [
+        document_id
+    ] * len(chunks)
 
-    def add_chunks(
-        self,
-        document_id: str,
-        chunks: List[DocumentChunk],
-        embeddings: np.ndarray
-    ) -> None:
+    new_chunks_data = [
+        chunk.to_dict()
+        for chunk in chunks
+    ]
 
-        if (
-            not chunks
-            or embeddings is None
-            or len(embeddings) == 0
-        ):
-            return
+    if (
+        self.vectors is None
+        or len(self.chunk_ids) == 0
+    ):
 
-        embeddings = np.asarray(
-            embeddings,
-            dtype=np.float32
-        )
+        self.chunk_ids = new_chunk_ids
+        self.document_ids = new_document_ids
+        self.chunks_data = new_chunks_data
+        self.vectors = embeddings.copy()
 
-        # Make sure embeddings are 2-D
-        if embeddings.ndim == 1:
-            embeddings = embeddings.reshape(
-                1, -1
-            )
+    else:
 
-        if len(embeddings) != len(chunks):
-            raise ValueError(
-                "Number of embeddings does not match "
-                "number of chunks: "
-                f"{len(embeddings)} != {len(chunks)}"
-            )
-
-        # Remove old vectors belonging to this document.
-        self.delete_document_vectors(
-            document_id,
-            auto_save=False
-        )
-
-        new_chunk_ids = [
-            c.chunk_id
-            for c in chunks
-        ]
-
-        new_doc_ids = [
-            document_id
-        ] * len(chunks)
-
-        new_chunks_data = [
-            c.to_dict()
-            for c in chunks
-        ]
-
-        # -----------------------------------------------------
-        # EMPTY VECTOR STORE
-        # -----------------------------------------------------
-
-        if (
-            self.vectors is None
-            or len(self.chunk_ids) == 0
-        ):
-
-            self.chunk_ids = list(
-                new_chunk_ids
-            )
-
-            self.document_ids = list(
-                new_doc_ids
-            )
-
-            self.chunks_data = list(
-                new_chunks_data
-            )
-
-            self.vectors = embeddings.copy()
-
-        # -----------------------------------------------------
-        # EXISTING VECTOR STORE
-        # -----------------------------------------------------
-
-        else:
-
-            existing = np.asarray(
-                self.vectors,
-                dtype=np.float32
-            )
-
-            if existing.ndim == 1:
-                existing = existing.reshape(
-                    1, -1
-                )
-
-            # If dimensions differ, do NOT perform vstack.
-            # Existing vectors were created using a different
-            # embedding vocabulary/model.
-            if existing.shape[1] != embeddings.shape[1]:
-
-                print(
-                    "[NexusRAG] Vector dimension changed: "
-                    f"{existing.shape[1]} -> "
-                    f"{embeddings.shape[1]}"
-                )
-
-                # Rebuild the store using ONLY the new
-                # document being indexed. Other documents
-                # will be re-indexed when requested.
-                self.chunk_ids = list(
-                    new_chunk_ids
-                )
-
-                self.document_ids = list(
-                    new_doc_ids
-                )
-
-                self.chunks_data = list(
-                    new_chunks_data
-                )
-
-                self.vectors = embeddings.copy()
-
-            else:
-
-                self.chunk_ids.extend(
-                    new_chunk_ids
-                )
-
-                self.document_ids.extend(
-                    new_doc_ids
-                )
-
-                self.chunks_data.extend(
-                    new_chunks_data
-                )
-
-                self.vectors = np.vstack(
-                    [
-                        existing,
-                        embeddings
-                    ]
-                )
-
-        self.save()
-
-    # ---------------------------------------------------------
-    # DELETE DOCUMENT VECTORS
-    # ---------------------------------------------------------
-
-    def delete_document_vectors(
-        self,
-        document_id: str,
-        auto_save: bool = True
-    ) -> int:
-
-        if (
-            not self.document_ids
-            or self.vectors is None
-        ):
-            return 0
-
-        # Make sure metadata and vectors have
-        # consistent lengths.
-        total_vectors = len(
-            self.vectors
-        )
-
-        total_documents = len(
-            self.document_ids
-        )
-
-        usable_count = min(
-            total_vectors,
-            total_documents
-        )
-
-        if usable_count == 0:
-            return 0
-
-        indices_to_keep = [
-            i
-            for i in range(usable_count)
-            if self.document_ids[i]
-            != document_id
-        ]
-
-        deleted_count = (
-            usable_count
-            - len(indices_to_keep)
-        )
-
-        # -----------------------------------------------------
-        # KEEP NOTHING
-        # -----------------------------------------------------
-
-        if len(indices_to_keep) == 0:
-
-            self.chunk_ids = []
-            self.document_ids = []
-            self.chunks_data = []
-            self.vectors = None
-
-        # -----------------------------------------------------
-        # KEEP SOME VECTORS
-        # -----------------------------------------------------
-
-        else:
-
-            self.chunk_ids = [
-                self.chunk_ids[i]
-                for i in indices_to_keep
-                if i < len(self.chunk_ids)
-            ]
-
-            self.document_ids = [
-                self.document_ids[i]
-                for i in indices_to_keep
-            ]
-
-            self.chunks_data = [
-                self.chunks_data[i]
-                for i in indices_to_keep
-                if i < len(self.chunks_data)
-            ]
-
-            self.vectors = self.vectors[
-                indices_to_keep
-            ]
-
-        if auto_save:
-            self.save()
-
-        return deleted_count
-
-    # ---------------------------------------------------------
-    # SIMILARITY SEARCH
-    # ---------------------------------------------------------
-
-    def similarity_search(
-        self,
-        query_embedding: np.ndarray,
-        top_k: int = 5
-    ) -> List[
-        Tuple[Dict[str, Any], float]
-    ]:
-
-        if (
-            self.vectors is None
-            or len(self.chunk_ids) == 0
-        ):
-            return []
-
-        query_vec = np.asarray(
-            query_embedding,
-            dtype=np.float32
-        )
-
-        if query_vec.ndim == 1:
-            query_vec = query_vec.reshape(
-                1, -1
-            )
-
-        stored_vectors = np.asarray(
+        existing = np.asarray(
             self.vectors,
             dtype=np.float32
         )
 
-        if stored_vectors.ndim == 1:
-            stored_vectors = stored_vectors.reshape(
-                1, -1
+        if existing.ndim == 1:
+            existing = existing.reshape(
+                1,
+                -1
             )
 
-        # -----------------------------------------------------
-        # CRITICAL DIMENSION CHECK
-        # -----------------------------------------------------
+        existing_dimension = existing.shape[1]
+        new_dimension = embeddings.shape[1]
 
-        if (
-            stored_vectors.shape[1]
-            != query_vec.shape[1]
-        ):
+        if existing_dimension != new_dimension:
 
-            raise ValueError(
-                "Embedding dimension mismatch. "
-                f"Stored vectors have dimension "
-                f"{stored_vectors.shape[1]}, "
-                f"but query has dimension "
-                f"{query_vec.shape[1]}. "
-                "Please re-index the documents."
+            print(
+                "[NexusRAG] Embedding dimension changed: "
+                f"{existing_dimension} -> {new_dimension}"
             )
 
-        # Cosine similarity because embeddings
-        # are L2 normalized.
-        scores = np.dot(
-            stored_vectors,
-            query_vec.T
-        ).flatten()
-
-        top_k = max(
-            1,
-            min(
-                int(top_k),
-                len(scores)
-            )
-        )
-
-        top_indices = np.argsort(
-            scores
-        )[::-1][:top_k]
-
-        results = []
-
-        for idx in top_indices:
-
-            if idx >= len(
-                self.chunks_data
-            ):
-                continue
-
-            score = float(
-                scores[idx]
-            )
-
-            results.append(
-                (
-                    self.chunks_data[idx],
-                    score
-                )
-            )
-
-        return results
-
-    # ---------------------------------------------------------
-    # STATS
-    # ---------------------------------------------------------
-
-    def get_total_vectors(self) -> int:
-
-        if not self.chunk_ids:
-            return 0
-
-        return len(
-            self.chunk_ids
-        )
-
-    def get_indexed_document_ids(
-        self
-    ) -> List[str]:
-
-        return list(
-            set(
-                self.document_ids
-            )
-        )
-
-    # ---------------------------------------------------------
-    # SAVE
-    # ---------------------------------------------------------
-
-    def save(self) -> None:
-
-        vec_file = (
-            self.persist_dir
-            / "vectors.npy"
-        )
-
-        meta_file = (
-            self.persist_dir
-            / "metadata.json"
-        )
-
-        if (
-            self.vectors is not None
-            and len(self.chunk_ids) > 0
-        ):
-
-            np.save(
-                str(vec_file),
-                self.vectors
-            )
-
-            data = {
-                "chunk_ids":
-                    self.chunk_ids,
-
-                "document_ids":
-                    self.document_ids,
-
-                "chunks_data":
-                    self.chunks_data
-            }
-
-            with open(
-                meta_file,
-                "w",
-                encoding="utf-8"
-            ) as f:
-
-                json.dump(
-                    data,
-                    f,
-                    indent=2
-                )
+            # A local TF-IDF vocabulary changed.
+            # Rebuild the persisted store using the
+            # newly indexed document.
+            self.chunk_ids = new_chunk_ids
+            self.document_ids = new_document_ids
+            self.chunks_data = new_chunks_data
+            self.vectors = embeddings.copy()
 
         else:
 
-            if vec_file.exists():
-                vec_file.unlink()
+            self.chunk_ids.extend(
+                new_chunk_ids
+            )
 
-            if meta_file.exists():
-                meta_file.unlink()
+            self.document_ids.extend(
+                new_document_ids
+            )
 
-    # ---------------------------------------------------------
-    # LOAD
-    # ---------------------------------------------------------
+            self.chunks_data.extend(
+                new_chunks_data
+            )
 
-    def load(self) -> bool:
+            self.vectors = np.vstack(
+                [
+                    existing,
+                    embeddings
+                ]
+            )
 
-        vec_file = (
-            self.persist_dir
-            / "vectors.npy"
+    self.save()
+
+def delete_document_vectors(
+    self,
+    document_id: str,
+    auto_save: bool = True
+) -> int:
+
+    if (
+        not self.document_ids
+        or self.vectors is None
+    ):
+        return 0
+
+    vectors = np.asarray(
+        self.vectors,
+        dtype=np.float32
+    )
+
+    if vectors.ndim == 1:
+        vectors = vectors.reshape(
+            1,
+            -1
         )
 
-        meta_file = (
-            self.persist_dir
-            / "metadata.json"
-        )
+    usable_count = min(
+        len(vectors),
+        len(self.document_ids),
+        len(self.chunk_ids),
+        len(self.chunks_data)
+    )
 
-        if not (
-            vec_file.exists()
-            and meta_file.exists()
-        ):
+    if usable_count == 0:
+        return 0
 
-            self.chunk_ids = []
-            self.document_ids = []
-            self.chunks_data = []
-            self.vectors = None
+    keep_indices = [
+        index
+        for index in range(usable_count)
+        if self.document_ids[index] != document_id
+    ]
 
-            return False
+    deleted_count = (
+        usable_count
+        - len(keep_indices)
+    )
 
-        try:
-
-            self.vectors = np.load(
-                str(vec_file)
-            )
-
-            with open(
-                meta_file,
-                "r",
-                encoding="utf-8"
-            ) as f:
-
-                data = json.load(f)
-
-            self.chunk_ids = data.get(
-                "chunk_ids",
-                []
-            )
-
-            self.document_ids = data.get(
-                "document_ids",
-                []
-            )
-
-            self.chunks_data = data.get(
-                "chunks_data",
-                []
-            )
-
-            # Validate loaded store.
-            if (
-                self.vectors is not None
-                and self.vectors.ndim == 1
-            ):
-
-                self.vectors = (
-                    self.vectors.reshape(
-                        1, -1
-                    )
-                )
-
-            # If metadata and vector count are
-            # inconsistent, reset the store.
-            if (
-                self.vectors is not None
-                and len(self.vectors)
-                != len(self.chunk_ids)
-            ):
-
-                print(
-                    "[NexusRAG] Invalid vector store "
-                    "detected. Resetting."
-                )
-
-                self.chunk_ids = []
-                self.document_ids = []
-                self.chunks_data = []
-                self.vectors = None
-
-                return False
-
-            return True
-
-        except Exception as e:
-
-            print(
-                f"Error loading vector store: {e}"
-            )
-
-            self.chunk_ids = []
-            self.document_ids = []
-            self.chunks_data = []
-            self.vectors = None
-
-            return False
-
-    # ---------------------------------------------------------
-    # CLEAR
-    # ---------------------------------------------------------
-
-    def clear(self) -> None:
+    if not keep_indices:
 
         self.chunk_ids = []
         self.document_ids = []
         self.chunks_data = []
         self.vectors = None
 
-        for f in self.persist_dir.glob("*"):
+    else:
 
-            try:
-                f.unlink()
+        self.chunk_ids = [
+            self.chunk_ids[index]
+            for index in keep_indices
+        ]
 
-            except Exception:
-                pass
+        self.document_ids = [
+            self.document_ids[index]
+            for index in keep_indices
+        ]
+
+        self.chunks_data = [
+            self.chunks_data[index]
+            for index in keep_indices
+        ]
+
+        self.vectors = vectors[
+            keep_indices
+        ]
+
+    if auto_save:
+        self.save()
+
+    return deleted_count
+
+def similarity_search(
+    self,
+    query_embedding: np.ndarray,
+    top_k: int = 5
+) -> List[
+    Tuple[Dict[str, Any], float]
+]:
+
+    if (
+        self.vectors is None
+        or len(self.chunk_ids) == 0
+    ):
+        return []
+
+    stored_vectors = np.asarray(
+        self.vectors,
+        dtype=np.float32
+    )
+
+    query_vec = np.asarray(
+        query_embedding,
+        dtype=np.float32
+    )
+
+    if stored_vectors.ndim == 1:
+        stored_vectors = stored_vectors.reshape(
+            1,
+            -1
+        )
+
+    if query_vec.ndim == 1:
+        query_vec = query_vec.reshape(
+            1,
+            -1
+        )
+
+    stored_dimension = (
+        stored_vectors.shape[1]
+    )
+
+    query_dimension = (
+        query_vec.shape[1]
+    )
+
+    # Never allow numpy.dot() to produce the
+    # confusing "shapes not aligned" error.
+    if stored_dimension != query_dimension:
+
+        raise ValueError(
+            "Embedding dimension mismatch: "
+            f"stored vectors={stored_dimension}, "
+            f"query embedding={query_dimension}. "
+            "The vector store must be rebuilt "
+            "with the current embedding configuration."
+        )
+
+    scores = np.dot(
+        stored_vectors,
+        query_vec.T
+    ).flatten()
+
+    if len(scores) == 0:
+        return []
+
+    top_k = max(
+        1,
+        min(
+            int(top_k),
+            len(scores)
+        )
+    )
+
+    top_indices = np.argsort(
+        scores
+    )[::-1][:top_k]
+
+    results = []
+
+    for index in top_indices:
+
+        index = int(index)
+
+        if index >= len(
+            self.chunks_data
+        ):
+            continue
+
+        results.append(
+            (
+                self.chunks_data[index],
+                float(scores[index])
+            )
+        )
+
+    return results
+
+def get_total_vectors(self) -> int:
+
+    if not self.chunk_ids:
+        return 0
+
+    return len(
+        self.chunk_ids
+    )
+
+def get_indexed_document_ids(
+    self
+) -> List[str]:
+
+    return list(
+        set(
+            self.document_ids
+        )
+    )
+
+def save(self) -> None:
+
+    vector_file = (
+        self.persist_dir
+        / "vectors.npy"
+    )
+
+    metadata_file = (
+        self.persist_dir
+        / "metadata.json"
+    )
+
+    if (
+        self.vectors is not None
+        and len(self.chunk_ids) > 0
+    ):
+
+        np.save(
+            str(vector_file),
+            self.vectors
+        )
+
+        data = {
+            "chunk_ids": self.chunk_ids,
+            "document_ids": self.document_ids,
+            "chunks_data": self.chunks_data
+        }
+
+        with open(
+            metadata_file,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                data,
+                file,
+                indent=2
+            )
+
+    else:
+
+        if vector_file.exists():
+            vector_file.unlink()
+
+        if metadata_file.exists():
+            metadata_file.unlink()
+
+def load(self) -> bool:
+
+    vector_file = (
+        self.persist_dir
+        / "vectors.npy"
+    )
+
+    metadata_file = (
+        self.persist_dir
+        / "metadata.json"
+    )
+
+    if not (
+        vector_file.exists()
+        and metadata_file.exists()
+    ):
+
+        self.chunk_ids = []
+        self.document_ids = []
+        self.chunks_data = []
+        self.vectors = None
+
+        return False
+
+    try:
+
+        vectors = np.load(
+            str(vector_file)
+        )
+
+        with open(
+            metadata_file,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            data = json.load(file)
+
+        if vectors.ndim == 1:
+            vectors = vectors.reshape(
+                1,
+                -1
+            )
+
+        chunk_ids = data.get(
+            "chunk_ids",
+            []
+        )
+
+        document_ids = data.get(
+            "document_ids",
+            []
+        )
+
+        chunks_data = data.get(
+            "chunks_data",
+            []
+        )
+
+        if not (
+            len(vectors)
+            == len(chunk_ids)
+            == len(document_ids)
+            == len(chunks_data)
+        ):
+
+            print(
+                "[NexusRAG] Vector store metadata "
+                "is inconsistent. Resetting store."
+            )
+
+            self.clear()
+
+            return False
+
+        self.vectors = vectors
+        self.chunk_ids = chunk_ids
+        self.document_ids = document_ids
+        self.chunks_data = chunks_data
+
+        return True
+
+    except Exception as error:
+
+        print(
+            f"[NexusRAG] Error loading vector store: {error}"
+        )
+
+        self.chunk_ids = []
+        self.document_ids = []
+        self.chunks_data = []
+        self.vectors = None
+
+        return False
+
+def clear(self) -> None:
+
+    self.chunk_ids = []
+    self.document_ids = []
+    self.chunks_data = []
+    self.vectors = None
+
+    vector_file = (
+        self.persist_dir
+        / "vectors.npy"
+    )
+
+    metadata_file = (
+        self.persist_dir
+        / "metadata.json"
+    )
+
+    for file in [
+        vector_file,
+        metadata_file
+    ]:
+
+        try:
+            if file.exists():
+                file.unlink()
+        except Exception:
+            pass
+```
