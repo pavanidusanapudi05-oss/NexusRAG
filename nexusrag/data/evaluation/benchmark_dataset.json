@@ -1,0 +1,155 @@
+[
+  {
+    "id": "TC-001",
+    "query": "What is the current policy for this process?",
+    "intent": "general_qa",
+    "expected_docs": [
+      "Employee_Operations_Policy_2026.pdf"
+    ],
+    "expected_sections": [
+      "Section 1",
+      "Section 2"
+    ],
+    "ground_truth_claims": [
+      "Employee Operations Policy 2026",
+      "supersedes 2025",
+      "60% attendance",
+      "core hours 10 AM - 3 PM"
+    ],
+    "category": "Current Policy Lookup"
+  },
+  {
+    "id": "TC-002",
+    "query": "What changed between 2025 and 2026?",
+    "intent": "version_comparison",
+    "expected_docs": [
+      "Employee_Operations_Policy_2025.pdf",
+      "Employee_Operations_Policy_2026.pdf"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 3",
+      "Section 4",
+      "Section 5"
+    ],
+    "ground_truth_claims": [
+      "75% to 60%",
+      "1 day to 3 days remote",
+      "14 days to 7 days notice",
+      "$50 to $75 meal allowance"
+    ],
+    "category": "Version Intelligence"
+  },
+  {
+    "id": "TC-003",
+    "query": "Which document supports this requirement?",
+    "intent": "requirement_lookup",
+    "expected_docs": [
+      "Enterprise_Security_Regulation_SR402.pdf",
+      "Employee_Operations_Policy_2026.pdf",
+      "IT_Infrastructure_Manual_v3.docx"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 3"
+    ],
+    "ground_truth_claims": [
+      "Regulation SR-402",
+      "Hardware MFA",
+      "Policy 2026",
+      "IT Infrastructure Manual"
+    ],
+    "category": "Requirement Attribution"
+  },
+  {
+    "id": "TC-004",
+    "query": "How does the regulation affect this process?",
+    "intent": "regulation_impact",
+    "expected_docs": [
+      "Enterprise_Security_Regulation_SR402.pdf",
+      "IT_Infrastructure_Manual_v3.docx"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 4",
+      "Section 5"
+    ],
+    "ground_truth_claims": [
+      "Process X",
+      "2-hour breach SLA",
+      "7-year log retention",
+      "Hardware MFA"
+    ],
+    "category": "Regulation Impact"
+  },
+  {
+    "id": "TC-005",
+    "query": "Compare the requirements across these three documents.",
+    "intent": "cross_doc_comparison",
+    "expected_docs": [
+      "Employee_Operations_Policy_2025.pdf",
+      "Employee_Operations_Policy_2026.pdf",
+      "Enterprise_Security_Regulation_SR402.pdf"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 3"
+    ],
+    "ground_truth_claims": [
+      "75% vs 60%",
+      "1 day vs 3 days",
+      "MFA mandate",
+      "SR-402"
+    ],
+    "category": "Cross-Document Comparison"
+  },
+  {
+    "id": "TC-006",
+    "query": "Are there any conflicting requirements?",
+    "intent": "conflict_detection",
+    "expected_docs": [
+      "Employee_Operations_Policy_2025.pdf",
+      "Employee_Operations_Policy_2026.pdf"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 3"
+    ],
+    "ground_truth_claims": [
+      "75% on-site vs 60% on-site",
+      "1 day vs 3 days remote",
+      "14 days vs 7 days notice"
+    ],
+    "category": "Conflict Detection"
+  },
+  {
+    "id": "TC-007",
+    "query": "What is the mandatory attendance percentage and notice period for leave in 2026?",
+    "intent": "general_qa",
+    "expected_docs": [
+      "Employee_Operations_Policy_2026.pdf"
+    ],
+    "expected_sections": [
+      "Section 2",
+      "Section 4"
+    ],
+    "ground_truth_claims": [
+      "60%",
+      "25 days",
+      "7 days advance notice"
+    ],
+    "category": "Specific Clause QA"
+  },
+  {
+    "id": "TC-008",
+    "query": "What is the policy for interstellar travel per-diem in year 3050?",
+    "intent": "general_qa",
+    "expected_docs": [],
+    "expected_sections": [],
+    "ground_truth_claims": [
+      "insufficient evidence",
+      "could not find"
+    ],
+    "category": "Abstention & Hallucination Prevention"
+  }
+]

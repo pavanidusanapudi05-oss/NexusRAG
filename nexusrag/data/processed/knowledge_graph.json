@@ -1,0 +1,251 @@
+{
+  "entities": [
+    {
+      "id": "Organization:NexusCorp",
+      "name": "NexusCorp",
+      "type": "Organization",
+      "properties": {}
+    },
+    {
+      "id": "Policy:Employee Operations Policy 2025",
+      "name": "Employee Operations Policy 2025",
+      "type": "Policy",
+      "properties": {
+        "version": "1.0",
+        "year": "2025",
+        "doc": "Employee_Operations_Policy_2025.pdf"
+      }
+    },
+    {
+      "id": "Process:Remote Work Authorization Process",
+      "name": "Remote Work Authorization Process",
+      "type": "Process",
+      "properties": {}
+    },
+    {
+      "id": "Requirement:75% On-Site Attendance Requirement",
+      "name": "75% On-Site Attendance Requirement",
+      "type": "Requirement",
+      "properties": {
+        "threshold": "75%",
+        "policy": "2025"
+      }
+    },
+    {
+      "id": "Policy:Employee Operations Policy 2026",
+      "name": "Employee Operations Policy 2026",
+      "type": "Policy",
+      "properties": {
+        "version": "2.0",
+        "year": "2026",
+        "doc": "Employee_Operations_Policy_2026.pdf"
+      }
+    },
+    {
+      "id": "Requirement:60% On-Site Attendance Requirement",
+      "name": "60% On-Site Attendance Requirement",
+      "type": "Requirement",
+      "properties": {
+        "threshold": "60%",
+        "policy": "2026"
+      }
+    },
+    {
+      "id": "Requirement:Mandatory Hardware MFA (SEC-01)",
+      "name": "Mandatory Hardware MFA (SEC-01)",
+      "type": "Requirement",
+      "properties": {
+        "standard": "Hardware Key / Authenticator"
+      }
+    },
+    {
+      "id": "Regulation:Regulation SR-402",
+      "name": "Regulation SR-402",
+      "type": "Regulation",
+      "properties": {
+        "version": "3.1",
+        "year": "2026",
+        "authority": "Global InfoSec Board"
+      }
+    },
+    {
+      "id": "Process:Process X (Incident Response & Provisioning)",
+      "name": "Process X (Incident Response & Provisioning)",
+      "type": "Process",
+      "properties": {}
+    },
+    {
+      "id": "Requirement:15-Min Triage & 1-Hr Escalation SLA",
+      "name": "15-Min Triage & 1-Hr Escalation SLA",
+      "type": "Requirement",
+      "properties": {}
+    },
+    {
+      "id": "Requirement:AES-256 & TLS 1.3 Encryption (SEC-02)",
+      "name": "AES-256 & TLS 1.3 Encryption (SEC-02)",
+      "type": "Requirement",
+      "properties": {}
+    },
+    {
+      "id": "Requirement:7-Year Security Audit Log Retention (SEC-03)",
+      "name": "7-Year Security Audit Log Retention (SEC-03)",
+      "type": "Requirement",
+      "properties": {}
+    },
+    {
+      "id": "Requirement:2-Hour Breach Reporting Mandate (SEC-04)",
+      "name": "2-Hour Breach Reporting Mandate (SEC-04)",
+      "type": "Requirement",
+      "properties": {}
+    },
+    {
+      "id": "Technical Manual:IT Infrastructure Manual v3.4",
+      "name": "IT Infrastructure Manual v3.4",
+      "type": "Technical Manual",
+      "properties": {
+        "version": "3.4",
+        "year": "2026"
+      }
+    }
+  ],
+  "relations": [
+    {
+      "source_id": "Policy:Employee Operations Policy 2025",
+      "target_id": "Organization:NexusCorp",
+      "type": "POLICY_APPLIES_TO",
+      "properties": {
+        "scope": "Enterprise"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2025",
+      "target_id": "Process:Remote Work Authorization Process",
+      "type": "POLICY_APPLIES_TO",
+      "properties": {
+        "limit": "1 day/week",
+        "approver": "Department Manager"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2025",
+      "target_id": "Requirement:75% On-Site Attendance Requirement",
+      "type": "POLICY_REQUIRES",
+      "properties": {
+        "penalty": "HR Automated Warning"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2026",
+      "target_id": "Organization:NexusCorp",
+      "type": "POLICY_APPLIES_TO",
+      "properties": {
+        "scope": "Enterprise"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2026",
+      "target_id": "Policy:Employee Operations Policy 2025",
+      "type": "SUPERSEDES",
+      "properties": {
+        "reason": "Annual Policy Revision 2026"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2026",
+      "target_id": "Requirement:60% On-Site Attendance Requirement",
+      "type": "POLICY_REQUIRES",
+      "properties": {
+        "penalty": "Collaborative Review"
+      }
+    },
+    {
+      "source_id": "Requirement:60% On-Site Attendance Requirement",
+      "target_id": "Requirement:75% On-Site Attendance Requirement",
+      "type": "CONFLICTS_WITH",
+      "properties": {
+        "type": "Threshold Change (75% -> 60%)"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2026",
+      "target_id": "Process:Remote Work Authorization Process",
+      "type": "POLICY_APPLIES_TO",
+      "properties": {
+        "limit": "3 days/week",
+        "approver": "Department Director"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Requirement:Mandatory Hardware MFA (SEC-01)",
+      "type": "REQUIREMENT_DEFINED_BY",
+      "properties": {
+        "rule": "SMS 2FA Prohibited"
+      }
+    },
+    {
+      "source_id": "Process:Remote Work Authorization Process",
+      "target_id": "Requirement:Mandatory Hardware MFA (SEC-01)",
+      "type": "POLICY_REQUIRES",
+      "properties": {
+        "enforcement": "Mandatory for all remote logins"
+      }
+    },
+    {
+      "source_id": "Policy:Employee Operations Policy 2026",
+      "target_id": "Regulation:Regulation SR-402",
+      "type": "DOCUMENT_REFERENCES",
+      "properties": {
+        "clause": "Section 3 Remote Work Compliance"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Organization:NexusCorp",
+      "type": "REGULATION_AFFECTS",
+      "properties": {
+        "scope": "Cybersecurity & Data Protection"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Process:Process X (Incident Response & Provisioning)",
+      "type": "REGULATION_AFFECTS",
+      "properties": {
+        "mandate": "2-Hour Incident Notification & Audit Logging"
+      }
+    },
+    {
+      "source_id": "Process:Process X (Incident Response & Provisioning)",
+      "target_id": "Requirement:15-Min Triage & 1-Hr Escalation SLA",
+      "type": "REQUIREMENT_DEFINED_BY",
+      "properties": {
+        "standard": "Sev-1/Sev-2 Protocol"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Requirement:AES-256 & TLS 1.3 Encryption (SEC-02)",
+      "type": "REQUIREMENT_DEFINED_BY",
+      "properties": {
+        "scope": "Data at rest & transit"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Requirement:7-Year Security Audit Log Retention (SEC-03)",
+      "type": "REQUIREMENT_DEFINED_BY",
+      "properties": {
+        "storage": "Immutable Cloud Storage"
+      }
+    },
+    {
+      "source_id": "Regulation:Regulation SR-402",
+      "target_id": "Requirement:2-Hour Breach Reporting Mandate (SEC-04)",
+      "type": "REQUIREMENT_DEFINED_BY",
+      "properties": {
+        "penalty": "Tier-3 Escalation"
+      }
+    }
+  ]
+}

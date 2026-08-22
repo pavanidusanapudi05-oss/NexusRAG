@@ -1,0 +1,155 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 650px;
+                 background-color: #0f172a;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+        </style>
+    </head>
+
+
+    <body>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"borderWidth": 2, "color": "#F59E0B", "font": {"color": "#f8fafc"}, "id": "Organization:NexusCorp", "label": "NexusCorp", "shape": "dot", "size": 16, "title": "Organization: NexusCorp\n"}, {"borderWidth": 2, "color": "#8B5CF6", "font": {"color": "#f8fafc"}, "id": "Policy:Employee Operations Policy 2025", "label": "Employee Operations Policy 2025", "shape": "dot", "size": 22, "title": "Policy: Employee Operations Policy 2025\nversion: 1.0\nyear: 2025\ndoc: Employee_Operations_Policy_2025.pdf"}, {"borderWidth": 2, "color": "#3B82F6", "font": {"color": "#f8fafc"}, "id": "Process:Remote Work Authorization Process", "label": "Remote Work Authorization Process", "shape": "dot", "size": 16, "title": "Process: Remote Work Authorization Process\n"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:75% On-Site Attendance Requirement", "label": "75% On-Site Attendance Requirement", "shape": "dot", "size": 16, "title": "Requirement: 75% On-Site Attendance Requirement\nthreshold: 75%\npolicy: 2025"}, {"borderWidth": 2, "color": "#8B5CF6", "font": {"color": "#f8fafc"}, "id": "Policy:Employee Operations Policy 2026", "label": "Employee Operations Policy 2026", "shape": "dot", "size": 22, "title": "Policy: Employee Operations Policy 2026\nversion: 2.0\nyear: 2026\ndoc: Employee_Operations_Policy_2026.pdf"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:60% On-Site Attendance Requirement", "label": "60% On-Site Attendance Requirement", "shape": "dot", "size": 16, "title": "Requirement: 60% On-Site Attendance Requirement\nthreshold: 60%\npolicy: 2026"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:Mandatory Hardware MFA (SEC-01)", "label": "Mandatory Hardware MFA (SEC-01)", "shape": "dot", "size": 16, "title": "Requirement: Mandatory Hardware MFA (SEC-01)\nstandard: Hardware Key / Authenticator"}, {"borderWidth": 2, "color": "#EF4444", "font": {"color": "#f8fafc"}, "id": "Regulation:Regulation SR-402", "label": "Regulation SR-402", "shape": "dot", "size": 22, "title": "Regulation: Regulation SR-402\nversion: 3.1\nyear: 2026\nauthority: Global InfoSec Board"}, {"borderWidth": 2, "color": "#3B82F6", "font": {"color": "#f8fafc"}, "id": "Process:Process X (Incident Response \u0026 Provisioning)", "label": "Process X (Incident Response \u0026 Provisioning)", "shape": "dot", "size": 16, "title": "Process: Process X (Incident Response \u0026 Provisioning)\n"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:15-Min Triage \u0026 1-Hr Escalation SLA", "label": "15-Min Triage \u0026 1-Hr Escalation SLA", "shape": "dot", "size": 16, "title": "Requirement: 15-Min Triage \u0026 1-Hr Escalation SLA\n"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:AES-256 \u0026 TLS 1.3 Encryption (SEC-02)", "label": "AES-256 \u0026 TLS 1.3 Encryption (SEC-02)", "shape": "dot", "size": 16, "title": "Requirement: AES-256 \u0026 TLS 1.3 Encryption (SEC-02)\n"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:7-Year Security Audit Log Retention (SEC-03)", "label": "7-Year Security Audit Log Retention (SEC-03)", "shape": "dot", "size": 16, "title": "Requirement: 7-Year Security Audit Log Retention (SEC-03)\n"}, {"borderWidth": 2, "color": "#10B981", "font": {"color": "#f8fafc"}, "id": "Requirement:2-Hour Breach Reporting Mandate (SEC-04)", "label": "2-Hour Breach Reporting Mandate (SEC-04)", "shape": "dot", "size": 16, "title": "Requirement: 2-Hour Breach Reporting Mandate (SEC-04)\n"}, {"borderWidth": 2, "color": "#6366F1", "font": {"color": "#f8fafc"}, "id": "Technical Manual:IT Infrastructure Manual v3.4", "label": "IT Infrastructure Manual v3.4", "shape": "dot", "size": 16, "title": "Technical Manual: IT Infrastructure Manual v3.4\nversion: 3.4\nyear: 2026"}]);
+                  edges = new vis.DataSet([{"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2025", "label": "Policy Applies To", "title": "POLICY_APPLIES_TO", "to": "Organization:NexusCorp"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2025", "label": "Policy Applies To", "title": "POLICY_APPLIES_TO", "to": "Process:Remote Work Authorization Process"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2025", "label": "Policy Requires", "title": "POLICY_REQUIRES", "to": "Requirement:75% On-Site Attendance Requirement"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Process:Remote Work Authorization Process", "label": "Policy Requires", "title": "POLICY_REQUIRES", "to": "Requirement:Mandatory Hardware MFA (SEC-01)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2026", "label": "Policy Applies To", "title": "POLICY_APPLIES_TO", "to": "Organization:NexusCorp"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2026", "label": "Supersedes", "title": "SUPERSEDES", "to": "Policy:Employee Operations Policy 2025"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2026", "label": "Policy Requires", "title": "POLICY_REQUIRES", "to": "Requirement:60% On-Site Attendance Requirement"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2026", "label": "Policy Applies To", "title": "POLICY_APPLIES_TO", "to": "Process:Remote Work Authorization Process"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Policy:Employee Operations Policy 2026", "label": "Document References", "title": "DOCUMENT_REFERENCES", "to": "Regulation:Regulation SR-402"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Requirement:60% On-Site Attendance Requirement", "label": "Conflicts With", "title": "CONFLICTS_WITH", "to": "Requirement:75% On-Site Attendance Requirement"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Requirement Defined By", "title": "REQUIREMENT_DEFINED_BY", "to": "Requirement:Mandatory Hardware MFA (SEC-01)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Regulation Affects", "title": "REGULATION_AFFECTS", "to": "Organization:NexusCorp"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Regulation Affects", "title": "REGULATION_AFFECTS", "to": "Process:Process X (Incident Response \u0026 Provisioning)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Requirement Defined By", "title": "REQUIREMENT_DEFINED_BY", "to": "Requirement:AES-256 \u0026 TLS 1.3 Encryption (SEC-02)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Requirement Defined By", "title": "REQUIREMENT_DEFINED_BY", "to": "Requirement:7-Year Security Audit Log Retention (SEC-03)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Regulation:Regulation SR-402", "label": "Requirement Defined By", "title": "REQUIREMENT_DEFINED_BY", "to": "Requirement:2-Hour Breach Reporting Mandate (SEC-04)"}, {"arrows": "to", "color": "#64748b", "font": {"align": "middle", "color": "#94a3b8", "size": 10}, "from": "Process:Process X (Incident Response \u0026 Provisioning)", "label": "Requirement Defined By", "title": "REQUIREMENT_DEFINED_BY", "to": "Requirement:15-Min Triage \u0026 1-Hr Escalation SLA"}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {
+    "configure": {
+        "enabled": false
+    },
+    "edges": {
+        "color": {
+            "inherit": true
+        },
+        "smooth": {
+            "enabled": true,
+            "type": "dynamic"
+        }
+    },
+    "interaction": {
+        "dragNodes": true,
+        "hideEdgesOnDrag": false,
+        "hideNodesOnDrag": false
+    },
+    "physics": {
+        "enabled": true,
+        "stabilization": {
+            "enabled": true,
+            "fit": true,
+            "iterations": 1000,
+            "onlyDynamicEdges": false,
+            "updateInterval": 50
+        }
+    }
+};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>

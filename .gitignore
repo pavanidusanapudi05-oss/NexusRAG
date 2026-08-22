@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Environment Variables & Secrets
+.env
+.env.local
+
+# NexusRAG Local Data & SQLite
+nexusrag/data/*.db
+nexusrag/data/*.db-wal
+nexusrag/data/*.db-shm
+nexusrag/data/vector_store/
+*.log
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
