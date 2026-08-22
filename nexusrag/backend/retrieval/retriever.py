@@ -36,146 +36,60 @@ class VectorRetriever:
         self.top_k = top_k
 
     # ---------------------------------------------------------
-    # FIT LOCAL EMBEDDING PROVIDER
-    # ---------------------------------------------------------
-
-    def _fit_local_provider(self) -> None:
-
-        if not hasattr(
-            self.embedding_provider,
-            "fit"
-        ):
-            return
-
-        chunks_data = (
-            self.vector_store.chunks_data
-            or []
-        )
-
-        texts = []
-
-        for item in chunks_data:
-
-            text = str(
-                item.get(
-                    "text",
-                    ""
-                )
-            ).strip()
-
-            if text:
-                texts.append(text)
-
-        if not texts:
-            return
-
-        self.embedding_provider.fit(
-            texts
-        )
-
-    # ---------------------------------------------------------
     # CHECK DIMENSIONS
     # ---------------------------------------------------------
 
-    def _dimensions_match(
-        self,
-        query_embedding
-    ) -> bool:
-
+    def _dimensions_match(self, query_embedding) -> bool:
         if (
             self.vector_store.vectors is None
             or len(self.vector_store.vectors) == 0
         ):
             return True
 
-        stored_vectors = (
-            self.vector_store.vectors
-        )
+        stored_vectors = self.vector_store.vectors
 
         if stored_vectors.ndim == 1:
-            stored_dimension = (
-                stored_vectors.shape[0]
-            )
+            stored_dimension = stored_vectors.shape[0]
         else:
-            stored_dimension = (
-                stored_vectors.shape[1]
-            )
+            stored_dimension = stored_vectors.shape[1]
 
         query_dimension = (
             query_embedding.shape[1]
-            if query_embedding.ndim == 2
+            if getattr(query_embedding, "ndim", 1) == 2
             else query_embedding.shape[0]
         )
 
-        return (
-            stored_dimension
-            == query_dimension
-        )
+        return stored_dimension == query_dimension
 
     # ---------------------------------------------------------
     # REBUILD LOCAL VECTOR STORE
     # ---------------------------------------------------------
 
     def _rebuild_local_vectors(self) -> None:
-
-        if not hasattr(
-            self.embedding_provider,
-            "fit"
-        ):
+        if not hasattr(self.embedding_provider, "fit"):
             return
 
-        chunks_data = (
-            self.vector_store.chunks_data
-            or []
-        )
-
+        chunks_data = self.vector_store.chunks_data or []
         if not chunks_data:
             return
 
-        texts = [
-            str(
-                item.get(
-                    "text",
-                    ""
-                )
-            )
-            for item in chunks_data
-        ]
-
-        if not any(
-            text.strip()
-            for text in texts
-        ):
+        texts = [str(item.get("text", "")) for item in chunks_data]
+        if not any(text.strip() for text in texts):
             return
 
-        # Fit using exactly the same corpus
-        # stored in the vector store.
-        self.embedding_provider.fit(
-            texts
-        )
+        # Fit and embed using the exact stored corpus
+        self.embedding_provider.fit(texts)
+        new_vectors = self.embedding_provider.embed_texts(texts)
 
-        new_vectors = (
-            self.embedding_provider.embed_texts(
-                texts
-            )
-        )
-
-        if (
-            new_vectors is None
-            or len(new_vectors)
-            != len(chunks_data)
-        ):
+        if new_vectors is None or len(new_vectors) != len(chunks_data):
             raise ValueError(
                 "Failed to rebuild vectors. "
-                "Embedding count does not match "
-                "stored chunks."
+                "Embedding count does not match stored chunks."
             )
 
-        self.vector_store.vectors = (
-            new_vectors
-        )
-
-        self.vector_store.save()
+        self.vector_store.vectors = new_vectors
+        if hasattr(self.vector_store, "save"):
+            self.vector_store.save()
 
     # ---------------------------------------------------------
     # RETRIEVE
@@ -190,211 +104,93 @@ class VectorRetriever:
         if not query or not query.strip():
             return []
 
-        k = (
-            top_k
-            if top_k is not None
-            else self.top_k
-        )
+        k = top_k if top_k is not None else self.top_k
+        k = max(1, int(k))
 
-        k = max(
-            1,
-            int(k)
-        )
-
-        # -----------------------------------------------------
-        # EMPTY STORE
-        # -----------------------------------------------------
-
+        # Check empty store
         if (
             self.vector_store.vectors is None
-            or not self.vector_store.chunks_data
+            or not getattr(self.vector_store, "chunks_data", None)
         ):
             return []
 
         # -----------------------------------------------------
-        # LOCAL TF-IDF
-        # -----------------------------------------------------
-
-        if hasattr(
-            self.embedding_provider,
-            "fit"
-        ):
-
-            self._fit_local_provider()
-
-        # -----------------------------------------------------
         # CREATE QUERY EMBEDDING
         # -----------------------------------------------------
-
-        query_embedding = (
-            self.embedding_provider.embed_query(
-                query.strip()
-            )
-        )
+        # Note: Do NOT call _fit_local_provider() here to avoid resetting vocabulary
+        query_embedding = self.embedding_provider.embed_query(query.strip())
 
         # -----------------------------------------------------
-        # DIMENSION VALIDATION
+        # DIMENSION VALIDATION & AUTO REBUILD
         # -----------------------------------------------------
-
-        if not self._dimensions_match(
-            query_embedding
-        ):
-
-            # Old vectors may have been created
-            # using a different TF-IDF vocabulary.
-            if hasattr(
-                self.embedding_provider,
-                "fit"
-            ):
-
+        if not self._dimensions_match(query_embedding):
+            if hasattr(self.embedding_provider, "fit"):
                 self._rebuild_local_vectors()
+                query_embedding = self.embedding_provider.embed_query(query.strip())
 
-                # Create the query embedding again
-                # after rebuilding with the same vocabulary.
-                query_embedding = (
-                    self.embedding_provider.embed_query(
-                        query.strip()
-                    )
-                )
-
-            # If dimensions still do not match,
-            # fail with a clear error instead of
-            # NumPy's cryptic shapes error.
-            if not self._dimensions_match(
-                query_embedding
-            ):
-
+            if not self._dimensions_match(query_embedding):
                 stored_shape = (
                     self.vector_store.vectors.shape
                     if self.vector_store.vectors is not None
                     else None
                 )
-
                 query_shape = (
                     query_embedding.shape
                     if query_embedding is not None
                     else None
                 )
-
                 raise ValueError(
-                    "Embedding dimension mismatch after "
-                    "rebuilding the vector store. "
-                    f"Stored shape={stored_shape}, "
-                    f"query shape={query_shape}. "
-                    "Please clear the old vector store "
-                    "and re-index the documents."
+                    "Embedding dimension mismatch. "
+                    f"Stored shape={stored_shape}, query shape={query_shape}. "
+                    "Please re-index your documents."
                 )
 
         # -----------------------------------------------------
         # SIMILARITY SEARCH
         # -----------------------------------------------------
-
-        raw_results = (
-            self.vector_store.similarity_search(
-                query_embedding,
-                top_k=k
-            )
+        raw_results = self.vector_store.similarity_search(
+            query_embedding,
+            top_k=k
         )
 
-        results: List[
-            RetrievalResult
-        ] = []
+        results: List[RetrievalResult] = []
 
         # -----------------------------------------------------
-        # CONVERT RESULTS
+        # CONVERT RESULTS (Safe unpacking for dict & tuple)
         # -----------------------------------------------------
+        for item in raw_results:
+            # Handle item if returned as dictionary from vector_store
+            if isinstance(item, dict):
+                chunk_data = item
+                score = item.get("score", 0.0)
+            elif isinstance(item, tuple):
+                chunk_data = item[0] if len(item) > 0 else {}
+                score = item[1] if len(item) > 1 else 0.0
+            else:
+                chunk_data = getattr(item, "metadata", {})
+                score = 0.0
 
-        for chunk_data, score in raw_results:
-
-            meta = chunk_data.get(
-                "metadata",
-                {}
-            )
-
-            if not isinstance(
-                meta,
-                dict
-            ):
+            meta = chunk_data.get("metadata", {})
+            if not isinstance(meta, dict):
                 meta = {}
 
-            text = str(
-                chunk_data.get(
-                    "text",
-                    ""
-                )
-            )
+            text = str(chunk_data.get("text", ""))
 
             results.append(
                 RetrievalResult(
-                    chunk_id=str(
-                        chunk_data.get(
-                            "chunk_id",
-                            ""
-                        )
-                    ),
-
-                    document_id=str(
-                        chunk_data.get(
-                            "document_id",
-                            ""
-                        )
-                    ),
-
+                    chunk_id=str(chunk_data.get("chunk_id", chunk_data.get("document_id", ""))),
+                    document_id=str(chunk_data.get("document_id", "")),
                     text=text,
-
-                    similarity_score=round(
-                        float(score),
-                        4
-                    ),
-
-                    document_name=meta.get(
-                        "document_name",
-                        "Document"
-                    ),
-
-                    page_number=meta.get(
-                        "page_number",
-                        1
-                    ),
-
-                    section_title=meta.get(
-                        "section_title"
-                    ),
-
-                    sheet_name=meta.get(
-                        "sheet_name"
-                    ),
-
-                    version=meta.get(
-                        "version",
-                        "1.0"
-                    ),
-
-                    year=meta.get(
-                        "year",
-                        "2026"
-                    ),
-
-                    department=meta.get(
-                        "department",
-                        "General"
-                    ),
-
-                    char_count=chunk_data.get(
-                        "char_count",
-                        len(text)
-                    ),
-
-                    token_count=chunk_data.get(
-                        "token_count",
-                        max(
-                            1,
-                            len(
-                                text.split()
-                            )
-                        )
-                    ),
-
+                    similarity_score=round(float(score), 4),
+                    document_name=meta.get("document_name", "Document"),
+                    page_number=meta.get("page_number", 1),
+                    section_title=meta.get("section_title"),
+                    sheet_name=meta.get("sheet_name"),
+                    version=meta.get("version", "1.0"),
+                    year=meta.get("year", "2026"),
+                    department=meta.get("department", "General"),
+                    char_count=chunk_data.get("char_count", len(text)),
+                    token_count=chunk_data.get("token_count", max(1, len(text.split()))),
                     metadata=meta
                 )
             )
