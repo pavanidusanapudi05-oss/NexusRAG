@@ -1,20 +1,7 @@
-import logging
-from typing import List, Dict, Any, Optional
-
-logger = logging.getLogger(__name__)
-
-
-class LocalVectorStore:
-    def __init__(self, collection=None, index=None, vectors=None, chunks_data=None):
-        self.collection = collection
-        self.index = index
-        self.vectors = vectors
-        self.chunks_data = chunks_data or []
-
-    def similarity_search(self, query_embedding: Any, top_k: int = 5) -> List[Dict[str, Any]]:
+def similarity_search(self, query_embedding: Any, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Safely performs similarity search and extracts document metadata
-        without crashing on tuple unpacking or missing key structure.
+        without crashing on non-dict objects or missing key structures.
         """
         try:
             results = None
@@ -68,18 +55,20 @@ class LocalVectorStore:
                     elif isinstance(item, tuple):
                         doc = item[0] if len(item) > 0 else {}
                         score = item[1] if len(item) > 1 else 0.0
+                        
+                        # Safe extraction when doc is dict vs non-dict (str, object, etc.)
                         if isinstance(doc, dict):
                             doc_text = doc.get("text", "")
                             meta = doc.get("metadata", {})
-                            doc_id = doc.get("id", "unknown_id")
+                            doc_id = doc.get("id") or doc.get("chunk_id", "unknown_id")
                         else:
                             doc_text = getattr(doc, "page_content", str(doc))
-                            meta = getattr(doc, "metadata", {})
-                            doc_id = "unknown_id"
+                            meta = getattr(doc, "metadata", {}) if hasattr(doc, "metadata") else {}
+                            doc_id = getattr(doc, "id", "unknown_id")
                     else:
                         doc_text = getattr(item, "page_content", str(item))
-                        meta = getattr(item, "metadata", {})
-                        doc_id = "unknown_id"
+                        meta = getattr(item, "metadata", {}) if hasattr(item, "metadata") else {}
+                        doc_id = getattr(item, "id", "unknown_id")
                         score = 0.0
 
                     if not isinstance(meta, dict):
