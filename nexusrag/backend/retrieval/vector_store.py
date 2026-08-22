@@ -6,7 +6,6 @@ import numpy as np
 
 class LocalVectorStore:
 
-```
 def __init__(
     self,
     persist_dir: Optional[Path] = None
@@ -506,4 +505,3 @@ def clear(self) -> None:
                 file.unlink()
         except Exception:
             pass
-```
