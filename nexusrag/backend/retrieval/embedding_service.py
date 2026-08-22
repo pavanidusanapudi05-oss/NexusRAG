@@ -1,4 +1,3 @@
-import os
 import numpy as np
 from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -16,13 +15,15 @@ class BaseEmbeddingProvider:
 
 class LocalDenseEmbeddingProvider(BaseEmbeddingProvider):
     """
-    Local TF-IDF embedding provider.
+    Local TF-IDF based embedding provider.
 
-    The same vectorizer vocabulary is used for both
-    documents and queries, preventing dimension mismatch.
+    The vectorizer is fitted on the document corpus and the exact
+    vocabulary dimension is tracked so document vectors and query
+    vectors always use the same dimensions.
     """
 
     def __init__(self, max_features: int = 2048):
+
         self.max_features = max_features
 
         self.vectorizer = TfidfVectorizer(
@@ -36,82 +37,102 @@ class LocalDenseEmbeddingProvider(BaseEmbeddingProvider):
         self.dimension = 0
 
     def fit(self, texts: List[str]):
+
         if not texts:
             return
 
         clean_texts = [
-            str(text) if text is not None else ""
+            str(text)
             for text in texts
+            if str(text).strip()
         ]
+
+        if not clean_texts:
+            return
 
         self.vectorizer.fit(clean_texts)
 
+        self.is_fitted = True
+
+        # IMPORTANT:
+        # TF-IDF dimension is the actual vocabulary size,
+        # not max_features.
         self.dimension = len(
             self.vectorizer.vocabulary_
         )
 
-        self.is_fitted = True
-
-    def embed_texts(self, texts: List[str]) -> np.ndarray:
+    def embed_texts(
+        self,
+        texts: List[str]
+    ) -> np.ndarray:
 
         if not texts:
+            dimension = (
+                self.dimension
+                if self.dimension > 0
+                else self.max_features
+            )
+
             return np.empty(
-                (
-                    0,
-                    self.dimension
-                    if self.dimension > 0
-                    else self.max_features
-                ),
+                (0, dimension),
                 dtype=np.float32
             )
 
         if not self.is_fitted:
+
             self.fit(texts)
 
-        matrix = self.vectorizer.transform(texts)
-
-        embeddings = matrix.toarray().astype(
-            np.float32
+        tfidf_matrix = (
+            self.vectorizer
+            .transform(texts)
+            .toarray()
+            .astype(np.float32)
         )
 
         return normalize(
-            embeddings,
+            tfidf_matrix,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
-    def embed_query(self, query: str) -> np.ndarray:
+    def embed_query(
+        self,
+        query: str
+    ) -> np.ndarray:
 
-        if not self.is_fitted:
-            raise ValueError(
-                "Embedding provider is not fitted. "
-                "Index documents before searching."
+        if not query or not query.strip():
+
+            dimension = (
+                self.dimension
+                if self.dimension > 0
+                else self.max_features
             )
 
-        query = str(query).strip()
-
-        if not query:
             return np.zeros(
-                (1, self.dimension),
+                (1, dimension),
                 dtype=np.float32
             )
 
-        # IMPORTANT:
-        # Use the SAME vocabulary that was fitted
-        # on the indexed documents.
-        matrix = self.vectorizer.transform(
-            [query]
-        )
+        if not self.is_fitted:
 
-        embedding = matrix.toarray().astype(
-            np.float32
+            raise ValueError(
+                "Embedding provider is not fitted. "
+                "Fit it using the document corpus before "
+                "creating query embeddings."
+            )
+
+        tfidf_matrix = (
+            self.vectorizer
+            .transform([query])
+            .toarray()
+            .astype(np.float32)
         )
 
         return normalize(
-            embedding,
+            tfidf_matrix,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
 
 class GeminiEmbeddingProvider(BaseEmbeddingProvider):
@@ -121,12 +142,15 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         api_key: str,
         model_name: str = "models/text-embedding-004"
     ):
+
         import google.generativeai as genai
 
         self.api_key = api_key
         self.model_name = model_name
 
-        genai.configure(api_key=api_key)
+        genai.configure(
+            api_key=api_key
+        )
 
         self.genai = genai
 
@@ -158,7 +182,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
             arr,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
     def embed_query(
         self,
@@ -180,7 +204,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
             arr,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
 
 class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
@@ -190,6 +214,7 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
         api_key: str,
         model_name: str = "text-embedding-3-small"
     ):
+
         from openai import OpenAI
 
         self.client = OpenAI(
@@ -222,7 +247,7 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
             arr,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
     def embed_query(
         self,
@@ -243,7 +268,7 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
             arr,
             norm="l2",
             axis=1
-        )
+        ).astype(np.float32)
 
 
 class EmbeddingService:
@@ -255,11 +280,14 @@ class EmbeddingService:
         model_name: str = ""
     ) -> BaseEmbeddingProvider:
 
-        prov = provider_type.lower()
+        prov = (
+            provider_type or "local_dense"
+        ).lower()
 
         if prov == "gemini" and api_key:
 
             try:
+
                 return GeminiEmbeddingProvider(
                     api_key=api_key,
                     model_name=(
@@ -271,14 +299,15 @@ class EmbeddingService:
             except Exception as e:
 
                 print(
-                    f"[Warning] Failed to initialize "
+                    "[Warning] Failed to initialize "
                     f"Gemini embeddings ({e}). "
-                    f"Falling back to local dense embeddings."
+                    "Falling back to local dense embeddings."
                 )
 
         elif prov == "openai" and api_key:
 
             try:
+
                 return OpenAIEmbeddingProvider(
                     api_key=api_key,
                     model_name=(
@@ -290,9 +319,9 @@ class EmbeddingService:
             except Exception as e:
 
                 print(
-                    f"[Warning] Failed to initialize "
+                    "[Warning] Failed to initialize "
                     f"OpenAI embeddings ({e}). "
-                    f"Falling back to local dense embeddings."
+                    "Falling back to local dense embeddings."
                 )
 
         return LocalDenseEmbeddingProvider()
